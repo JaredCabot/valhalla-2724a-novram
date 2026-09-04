@@ -13,20 +13,24 @@ The pin map, data layout and number formats documented here are derived from
 drawing 2724-070 sheet 5, the Xicor X2212 and NCR 52212 datasheets, and a
 disassembly of the 6809 firmware.
 
-**Validation status.** Both paths are verified against hardware. Both devices of
-one instrument have been read, each twice, with matching checksums and
-bit-identical results. The restore path has been exercised in full on a real
-device: a dry run confirmed the array untouched, a commit issued one store
-cycle, and an independent re-read returned contents byte-for-byte identical to
-the backup taken beforehand, with a valid checksum and all thirteen constants
-inside the firmware's acceptance windows. `test_protocol.py` additionally
-covers the refusal paths, which cannot be exercised on hardware without
-risking the data.
+**Validation.** Both paths are verified against hardware. Reads are repeatable
+across resets and array recalls. A restore has been carried out end to end — dry
+run, one store cycle, independent re-read matching byte for byte — and the
+instrument accepted the result, reporting `CAL DATA OK` after both devices were
+refitted. `test_protocol.py` covers the refusal paths, which cannot be exercised
+on hardware without risking the data.
+
+The block layout, checksum arithmetic and acceptance tables are the same in the
+CPR and STD firmware variants. The tables sit at different ROM addresses —
+`$EECE` and `$EF27` in CPR, `$EC55` and `$EC7E` in STD — and hold identical
+values.
 
 **Calibration images are not distributed with this repository.** A device image
-holds the contents of one device of one specific instrument: 256 bytes, one per
-nibble, of which 180 are in use. Loading another instrument's calibration image
-produces a machine that satisfies its own checksum and reads incorrectly.
+holds the contents of one device of one instrument: 256 bytes, one per nibble,
+of which 180 are in use. Every instrument's constants are its own, and the
+checksum is stored alongside them rather than being a fixed value, so another
+instrument's image validates perfectly and is still wrong. Loading one produces
+a machine that satisfies its own checksum and reads incorrectly.
 
 Licensed MIT — see `LICENSE`.
 
@@ -222,6 +226,20 @@ nibble first.
 Both checksums are 16-bit sums of successive words with the carry discarded,
 the same arithmetic as the ROM checksum.
 
+The checksum is stored inside the block, not compared against a known value.
+`SUB_E0FA` recomputes it immediately before every store, so any instrument and
+any calibration produces a block that validates against itself. Verification
+therefore establishes internal consistency, not provenance. Being a sum with
+the carry discarded it is order-independent, so it detects neither transposed
+words nor errors that cancel; the three-pass read agreement and the acceptance
+windows cover what it cannot.
+
+`check` identifies an image by trying both layouts and seeing which one is
+self-consistent. The layouts disagree about where the checksum sits and how
+much it covers, so the test is structural and independent of the values. An
+image that satisfies both is reported as ambiguous rather than decoded as a
+guess.
+
 ### User block
 
 `$C35A` and `$C35B` are the tens and units digits of the IEEE-488 address, not
@@ -325,7 +343,9 @@ Linux, `/dev/cu.usbserial-*` on macOS. A board using a CH340 bridge rather than
 the ATmega16U2 appears under a different description but behaves identically.
 
 `flash.bat` compiles and uploads the sketch using the `arduino-cli` bundled
-inside the Arduino IDE, without opening the IDE. Run with no argument it
+inside the Arduino IDE, without opening the IDE. It looks for the CLI at the
+default install path and prints the path to correct if it is not there. Run
+with no argument it
 compiles and lists the ports it can see; run with a port it uploads to that
 port. It is a Windows convenience only — `arduino-cli` itself is
 cross-platform, and the same two commands work on any host. Uploads are

@@ -72,13 +72,14 @@
  * Writing is staged and must be unlocked:
  *
  *   I                 identify
- *   R                 read 256 nibbles          (always available)
+ *   R                 array recall, then read 256 nibbles.  Always available,
+ *                     and the only thing a backup sends.  Issued after a store
+ *                     it is also what proves the EEPROM took the data.
  *   A WRITE-ENABLE    arm; required before W or S
  *   W                 write 256 nibbles to RAM, then dump RAM back for the
  *                     host to verify.  Does NOT touch the EEPROM array.
  *   S                 commit RAM to the EEPROM array.  Refused unless the
  *                     immediately preceding W verified.  Auto-disarms.
- *   V                 array recall, then dump -- proves what the EEPROM holds
  *   D                 disarm
  *
  * Writing RAM without S is harmless: the instrument issues an array recall at
@@ -332,7 +333,6 @@ static int readLine(char *s, uint8_t n) {
    coverage the only thing that can get through. */
 static bool receiveImage(void) {
   char line[24];
-  uint8_t seen = 0;
   for (uint16_t i = 0; i < 256; i++) buf[i] = 0;
   Serial.println("SEND");
   for (uint8_t rec = 0; rec < 16; rec++) {
@@ -355,9 +355,8 @@ static bool receiveImage(void) {
       Serial.println("ERR checksum"); return false;
     }
     for (uint8_t i = 0; i < 16; i++) buf[base + i] = vals[i];
-    seen++;
   }
-  return seen == 16;
+  return true;
 }
 
 void setup(void) {
@@ -376,11 +375,6 @@ void loop(void) {
     Serial.println(BANNER);
 
   } else if (c == 'R') {
-    busIdle();
-    arrayRecall();
-    dumpAll();
-
-  } else if (c == 'V') {                   /* recall then dump: what the array holds */
     busIdle();
     arrayRecall();
     dumpAll();

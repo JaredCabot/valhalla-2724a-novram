@@ -14,6 +14,19 @@ import time
 sys.path.insert(0, os.path.dirname(os.path.abspath(__file__)))
 import novram as N
 
+def pack(block, total=256, fill=0x0F):
+    """Inverse of N.unpack(): spread bytes into one nibble per element.
+
+    A test fixture, not a faithful device image -- the locations past the end
+    of the block get `fill`, where a real part holds whatever its unwritten
+    cells hold (A5/5A on the parts examined)."""
+    nib = [fill] * total
+    for i, b in enumerate(block):
+        nib[2 * i] = b & 0x0F
+        nib[2 * i + 1] = (b >> 4) & 0x0F
+    return bytes(nib)
+
+
 BANNER_RW = "X2212-NOVRAM-RW UNO 3.0"
 BANNER_OLD = "X2212-NOVRAM-READER UNO 1.3"   # the retired read-only sketch
 TOKEN = "WRITE-ENABLE"
@@ -103,7 +116,7 @@ class Fake:
             if c == "I":
                 out(self.banner)
 
-            elif c in "RV":
+            elif c == "R":
                 self.ram = bytearray(self.eeprom)          # array recall
                 dump()
 
@@ -198,7 +211,7 @@ def drive(fake, fn, answers):
     builtins.input = lambda prompt="": next(it)
     N.time.sleep = lambda s: None
     try:
-        fn({"port": port})
+        fn(port)
     finally:
         builtins.input = old_input
         N.time.sleep = old_sleep
@@ -210,12 +223,12 @@ def menu_tests(check):
     cal = bytearray(range(N.CAL_LEN)) + bytearray(2)
     s = N.sum16(cal[:N.CAL_LEN])
     cal[N.CAL_LEN], cal[N.CAL_LEN + 1] = s >> 8, s & 0xFF
-    cal_nib = N.pack(bytes(cal))
+    cal_nib = pack(bytes(cal))
 
     usr = bytearray((i * 3 + 1) & 0xFF for i in range(N.USR_LEN)) + bytearray(2)
     s = N.sum16(usr[:N.USR_LEN])
     usr[N.USR_LEN], usr[N.USR_LEN + 1] = s >> 8, s & 0xFF
-    usr_nib = N.pack(bytes(usr))
+    usr_nib = pack(bytes(usr))
 
     junk = bytes((i * 11) & 0x0F for i in range(256))
 
@@ -225,7 +238,7 @@ def menu_tests(check):
     open("cal.bin", "wb").write(cal_nib)
     open("user.bin", "wb").write(usr_nib)
     open("junk.bin", "wb").write(junk)
-    onchip = N.pack(bytes(range(90)))
+    onchip = pack(bytes(range(90)))
     try:
         print("9. menu: an image that checks out as neither block is refused")
         f = Fake(onchip)
@@ -255,8 +268,8 @@ def menu_tests(check):
 
 
 def main():
-    original = N.pack(bytes(range(90)))            # what the chip holds now
-    restore = N.pack(bytes((i * 7 + 3) & 0xFF for i in range(90)))
+    original = pack(bytes(range(90)))            # what the chip holds now
+    restore = pack(bytes((i * 7 + 3) & 0xFF for i in range(90)))
     fails = 0
 
     def check(label, cond, detail=""):
@@ -340,25 +353,25 @@ def main():
     usr[0], usr[1] = 1, 4                                   # address 14
     good_cal = _seal(cal, N.CAL_LEN)
     good_usr = _seal(usr, N.USR_LEN)
-    ok, d = N.check(N.pack(good_cal), N.pack(good_usr))
+    ok, d = N.check(pack(good_cal), pack(good_usr))
     check("ROM-default constants are accepted", ok is True)
     check("q22 reads 1.000000", abs(N.q22(d["cal"], 0) / N.CAL_Q22 - 1.0) < 1e-6)
     check("two-digit IEEE-488 address decodes to 14",
           (d["user"][0] * 10 + d["user"][1]) & 0x1F == 14)
 
     print("17b. order does not matter, and a user image is never decoded as cal")
-    ok2, d2 = N.check(N.pack(good_usr), N.pack(good_cal))     # reversed
+    ok2, d2 = N.check(pack(good_usr), pack(good_cal))     # reversed
     check("same verdict with the arguments swapped", ok2 is True)
     check("the cal image still landed in the cal slot", d2["cal"] == d["cal"])
     check("the user image still landed in the user slot", d2["user"] == d["user"])
-    ok3, d3 = N.check(N.pack(good_usr))                        # user image alone
+    ok3, d3 = N.check(pack(good_usr))                        # user image alone
     check("a user image alone checks out", ok3 is True)
     check("and no calibration decode was attempted", d3["cal"] is None)
 
     bad = bytearray(good_cal)
     v = N.CAL_ACCEPT[1][0] + N.CAL_ACCEPT[1][1] + 1          # just outside
     bad[3], bad[4], bad[5] = (v >> 16) & 0xFF, (v >> 8) & 0xFF, v & 0xFF
-    ok, _ = N.check(N.pack(_seal(bad, N.CAL_LEN)), N.pack(good_usr))
+    ok, _ = N.check(pack(_seal(bad, N.CAL_LEN)), pack(good_usr))
     check("a constant outside its window is flagged", ok is False)
 
     print("7. one unstable nibble in a single pass must be caught")
@@ -370,7 +383,7 @@ def main():
     cal = bytearray(range(N.CAL_LEN)) + bytearray(2)
     s = N.sum16(cal[:N.CAL_LEN])
     cal[N.CAL_LEN], cal[N.CAL_LEN + 1] = s >> 8, s & 0xFF
-    good = N.unpack(N.pack(bytes(cal)), N.CAL_BYTES)
+    good = N.unpack(pack(bytes(cal)), N.CAL_BYTES)
     st = (good[N.CAL_LEN] << 8) | good[N.CAL_LEN + 1]
     check("a real cal image checks out", st == N.sum16(good[:N.CAL_LEN]))
     other = N.unpack(restore, N.CAL_BYTES)

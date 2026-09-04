@@ -261,7 +261,7 @@ def write_device(port, nib, commit=False):
         raise IOError("store refused: %s" % line)
     print("   store cycle issued")
 
-    s.write(b"V")                                     # recall, then read back
+    s.write(b"R")                                     # recall, then read back
     after = _read_dump(s)
     s.close()
     if after != bytes(v & 0x0F for v in nib):
@@ -294,21 +294,6 @@ def unpack(nib, nbytes):
     """Two consecutive nibbles, low first, make one byte."""
     return bytes((nib[2 * i] & 0x0F) | ((nib[2 * i + 1] & 0x0F) << 4)
                  for i in range(nbytes))
-
-
-def pack(block, total=256, fill=0x0F):
-    """Inverse of unpack(): spread bytes into one nibble per element.
-
-    Not exposed as a command. A device image built this way is NOT a faithful
-    copy of a real part: the locations past the end of the block are filled
-    with `fill`, whereas an actual device holds whatever its unwritten cells
-    hold (A5/5A on the parts examined). Used to construct images for the
-    tests, where the fill value is known and irrelevant."""
-    nib = [fill] * total
-    for i, b in enumerate(block):
-        nib[2 * i] = b & 0x0F
-        nib[2 * i + 1] = (b >> 4) & 0x0F
-    return bytes(nib)
 
 
 def q22(b, off):
@@ -344,18 +329,19 @@ def report_cal(cal):
     print()
     print("   Constants (see CAL_ACCEPT for the derivation):")
     print("   idx  addr    raw       value      nominal     |err|    limit   ")
+    inrange = True
     for i, (nom, lim) in enumerate(CAL_ACCEPT):
         off = 3 * i
         v = q22(cal, off)
         err = abs(v - nom)
         good = err < lim
         if not good:
-            ok = False
+            ok = inrange = False
         print("   %3d  $%04X  $%02X%02X%02X  %+10.6f  %+10.6f  %8.6f %8.6f  %s"
               % (i, CAL_CONSTS + off, cal[off], cal[off + 1], cal[off + 2],
                  v / CAL_Q22, nom / CAL_Q22, err / CAL_Q22, lim / CAL_Q22,
                  "ok" if good else "OUT"))
-    if all(abs(q22(cal, 3 * i) - nom) < lim for i, (nom, lim) in enumerate(CAL_ACCEPT)):
+    if inrange:
         print("   all 13 constants inside the firmware's own acceptance windows")
     else:
         print("   !! at least one constant is outside the window SUB_E0A1 tests.")
@@ -418,7 +404,7 @@ def report_user(usr):
     return ok
 
 
-def check(*nibs, **kw):
+def check(*nibs, names=None):
     """Decode and verify one or more device images.
 
     Each image is identified by its OWN checksum, not by the position it was
@@ -427,7 +413,7 @@ def check(*nibs, **kw):
 
     Returns (ok, {"cal": bytes or None, "user": bytes or None}).
     """
-    names = kw.get("names") or [None] * len(nibs)
+    names = names or [None] * len(nibs)
     ok = True
     out = {"cal": None, "user": None}
 
@@ -573,7 +559,7 @@ def identify_block(nib):
 DEVNAME = {"cal": "IC522 - calibration block", "user": "IC523 - user block"}
 
 
-def menu_backup(state):
+def menu_backup(port):
     print()
     print(BAR)
     print("BACK UP A DEVICE")
@@ -594,12 +580,12 @@ def menu_backup(state):
     print()
     print("Reading %s" % DEVNAME[dev])
     try:
-        nib = read_device(state["port"], passes=passes)
+        nib = read_device(port, passes=passes)
     except IOError as e:
         print("   READ FAILED: %s" % e)
         return
     except Exception as e:
-        print("   could not open %s: %s" % (state["port"], e))
+        print("   could not open %s: %s" % (port, e))
         return
     open(out, "wb").write(nib)
     used = 180 if dev == "cal" else 168
@@ -615,7 +601,7 @@ def menu_backup(state):
         print("   You may have the other chip in the socket.")
 
 
-def menu_check(state):
+def menu_check(port):
     print()
     print(BAR)
     print("CHECK A SAVED IMAGE")
@@ -632,7 +618,7 @@ def menu_check(state):
     print("   %s" % ("the image checks out" if ok else "THIS IMAGE IS BAD"))
 
 
-def menu_restore(state):
+def menu_restore(port):
     print()
     print(BAR)
     print("RESTORE A DEVICE  --  this can overwrite the calibration")
@@ -670,13 +656,13 @@ def menu_restore(state):
     if not ask_yes("   Run the dry run now?", True):
         return
     try:
-        write_device(state["port"], nib, commit=False)
+        write_device(port, nib, commit=False)
     except IOError as e:
         print("   DRY RUN FAILED: %s" % e)
         print("   Nothing was committed. Fix this before going further.")
         return
     except Exception as e:
-        print("   could not open %s: %s" % (state["port"], e))
+        print("   could not open %s: %s" % (port, e))
         return
 
     print()
@@ -691,7 +677,7 @@ def menu_restore(state):
         print("   Stopped. Nothing was written to the array.")
         return
     try:
-        write_device(state["port"], nib, commit=True)
+        write_device(port, nib, commit=True)
     except IOError as e:
         print("   COMMIT FAILED: %s" % e)
         return
@@ -702,16 +688,16 @@ def menu_restore(state):
 
 
 def menu():
-    state = {"port": None}
+    port = None
     print()
     print(BAR)
     print("Valhalla Scientific 2724A  --  NOVRAM tool  (IC522 / IC523, X2212)")
     print(BAR)
-    state["port"] = pick_port()
+    port = pick_port()
     while True:
         print()
         print(BAR)
-        print("Port: %s" % state["port"])
+        print("Port: %s" % port)
         c = ask_choice("Choose", [
             ("1", "Back up a device        (read a chip to a file)"),
             ("2", "Check a saved image     (decode and verify checksums)"),
@@ -720,13 +706,13 @@ def menu():
             ("q", "Quit"),
         ])
         if c == "1":
-            menu_backup(state)
+            menu_backup(port)
         elif c == "2":
-            menu_check(state)
+            menu_check(port)
         elif c == "3":
-            menu_restore(state)
+            menu_restore(port)
         elif c == "4":
-            state["port"] = pick_port(state["port"])
+            port = pick_port(port)
         elif c == "q":
             print()
             return 0
