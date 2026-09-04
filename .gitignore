@@ -1,0 +1,22 @@
+# ---------------------------------------------------------------------------
+# Calibration images are not tracked, deliberately.
+#
+# A .nib file holds the contents of one device of one specific instrument.
+# Loading another instrument's calibration image produces a machine that
+# satisfies its own checksum and reads incorrectly, which is the failure this
+# project exists to prevent. Backups belong somewhere private and off the
+# machine that made them.
+#
+# The pattern below is broad on purpose: every .bin this tool produces is a
+# calibration image, and a missed one is worse than an over-broad rule.
+# ---------------------------------------------------------------------------
+*.bin
+
+# Internal status notes
+HANDOVER.md
+
+# Build and packaging artefacts
+__pycache__/
+*.pyc
+build/
+2724A_NOVRAM_Project.zip
