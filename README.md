@@ -119,6 +119,20 @@ interrupts it.
 Lead length is the whole point of the capacitor, so it belongs across the socket
 pins themselves rather than at the Arduino's supply header.
 
+## A built adapter
+
+![The adapter, component side](2724ANOVRAMReaderTop.jpg)
+
+A prototyping shield on an Arduino Uno, with a ZIF socket for the DIP. A ZIF is
+worth the space: the devices are decades old, their leads are brittle, and each
+one is inserted and removed at least twice.
+
+![The adapter, wiring side](2724ANOVRAMReaderBottom.jpg)
+
+The underside carries the point-to-point wiring, the pull-up and pull-down
+resistors, and the `104` ceramic — 0.1 µF — sitting close to the socket pins
+where it belongs.
+
 ## Pin map
 
 Verified against drawing 2724-070 sheet 5, the Xicor X2212 datasheet and the
