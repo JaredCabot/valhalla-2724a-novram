@@ -377,16 +377,16 @@ def report_user(usr):
     if stored != calc:
         ok = False
 
-    # $C35A and $C35B are the TENS and UNITS digits of the IEEE-488 address,
-    # not a packed configuration word.  SUB_F277 forms the address by loading
-    # $C35B into A, $C35A into B, adding 10 to A B times, masking to 5 bits and
-    # writing the result to the GPIB controller at $1004.  The address-entry
+    # $C35A and $C35B are the TENS and UNITS digits of the instrument's bus
+    # address, not a packed configuration word.  SUB_F277 forms the address by
+    # loading $C35B into A, $C35A into B, adding 10 to A B times, masking to
+    # 5 bits and writing the result to the bus controller at $1004.  The address-entry
     # routine at L_F7F2 rolls the old units digit into $C35A (clamping it to
     # 0-2, since 2*10+9 = 29 is the largest that survives the mask) and puts
     # the new digit in $C35B.  The firmware's own default is $C35A=0, $C35B=9,
     # written by L_E1B4/L_E1D9 -- address 9.
     addr = (usr[0] * 10 + usr[1]) & 0x1F
-    print("   address digits  tens $%02X  units $%02X  ->  IEEE-488 address %d"
+    print("   address digits  tens $%02X  units $%02X  ->  bus address %d"
           % (usr[0], usr[1], addr))
     if usr[0] > 2 or usr[1] > 9:
         print("   !! digits out of range - the instrument would mask this to %d" % addr)

@@ -357,7 +357,7 @@ def main():
     ok, d = N.check(pack(good_cal), pack(good_usr))
     check("ROM-default constants are accepted", ok is True)
     check("q22 reads 1.000000", abs(N.q22(d["cal"], 0) / N.CAL_Q22 - 1.0) < 1e-6)
-    check("two-digit IEEE-488 address decodes to 14",
+    check("two-digit bus address decodes to 14",
           (d["user"][0] * 10 + d["user"][1]) & 0x1F == 14)
 
     print("17b. order does not matter, and a user image is never decoded as cal")

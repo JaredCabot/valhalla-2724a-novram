@@ -7,7 +7,7 @@ an Arduino Uno.
 IC522 holds 88 bytes of calibration data unique to one instrument. If its
 checksum fails, the firmware loads a default block from ROM without halting,
 and the instrument reads incorrectly while otherwise operating normally. IC523
-holds the user block: the IEEE-488 address and ten user memories.
+holds the user block: the instrument's bus address and ten user memories.
 
 The pin map, data layout and number formats documented here are derived from
 drawing 2724-070 sheet 5, the Xicor X2212 and NCR 52212 datasheets, and a
@@ -280,10 +280,10 @@ guess.
 
 ### User block
 
-`$C35A` and `$C35B` are the tens and units digits of the IEEE-488 address, not
-a packed configuration word. `SUB_F277` loads `$C35B` into A and `$C35A` into
-B, adds ten to A B times, masks to five bits, and writes the result to the GPIB
-controller at `$1004`:
+`$C35A` and `$C35B` are the tens and units digits of the instrument's bus
+address, not a packed configuration word. `SUB_F277` loads `$C35B` into A and
+`$C35A` into B, adds ten to A B times, masks to five bits, and writes the
+result to the bus controller at `$1004`:
 
     address = (10 x $C35A + $C35B) & $1F
 
@@ -402,14 +402,6 @@ must agree exactly; every 16-nibble record carries its own checksum. `check` rec
 images and identifies each by its own checksum rather than by the order given,
 so a calibration image is never decoded against the user block's layout or the
 reverse.
-
-An independent cross-check is available while the chips remain in the
-instrument: `RM0` through `RM9` recall the ten user memories to the display,
-and the display is what the GPIB talk buffer reports. `check` decodes the same
-ten memories from IC523's nibble pairs. Agreement validates the pin mapping,
-nibble order and unpacking against the instrument's own reading of the same
-bytes. The cross-check is uninformative on an instrument whose user memories
-are at their default of zero.
 
 ### Restore
 
