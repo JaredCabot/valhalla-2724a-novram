@@ -308,7 +308,8 @@ the top of the same kilobyte.
     python3 novram.py
 
 With no arguments the tool presents a menu, enumerating serial ports and
-offering backup, check and restore. Every destructive step prompts first. The
+offering backup, check and restore. The menu checks one image at a time; the
+`check` subcommand takes any number of them. Every destructive step prompts first. The
 same operations are available as the subcommands `read`, `check` and `write`;
 `python3 novram.py --help` lists them.
 

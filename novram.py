@@ -521,12 +521,8 @@ def pick_port(current=None):
     return ask("Serial port", current)
 
 
-def pick_file(pattern, prompt, exclude=()):
-    """List the files matching pattern and take a number, a path, or Enter.
-
-    `exclude` names files already chosen: they are still listed and still
-    selectable by number, but the Enter default skips past them, so answering
-    two prompts with Enter does not hand back the same file twice."""
+def pick_file(pattern, prompt):
+    """List the files matching pattern and take a number, a path, or Enter."""
     import glob
     found = sorted(glob.glob(pattern))
     if not found:
@@ -538,10 +534,9 @@ def pick_file(pattern, prompt, exclude=()):
 
     print()
     for i, f in enumerate(found, 1):
-        mark = "  (already chosen)" if f in exclude else ""
-        print("   %d  %s  (%d bytes)%s" % (i, f, os.path.getsize(f), mark))
+        print("   %d  %s  (%d bytes)" % (i, f, os.path.getsize(f)))
 
-    default = next((f for f in found if f not in exclude), found[0])
+    default = found[0]
     while True:
         v = ask("%s - number, path, or Enter" % prompt, default)
         if v.isdigit():
@@ -623,29 +618,18 @@ def menu_backup(state):
 def menu_check(state):
     print()
     print(BAR)
-    print("CHECK SAVED IMAGES")
+    print("CHECK A SAVED IMAGE")
     print(BAR)
-    print("Each image is identified by its own checksum, so the order they are")
-    print("chosen in does not matter.")
-    chosen = []
-    a = pick_file("*.bin", "First image")
-    chosen.append(a)
-    if ask_yes("Check a second image as well?", True):
-        chosen.append(pick_file("*.bin", "Second image", exclude=chosen))
-
-    nibs, names = [], []
-    for f in chosen:
-        d = open(f, "rb").read()
-        if len(d) != 256:
-            print("   %s is %d bytes, not 256 - skipping" % (f, len(d)))
-            continue
-        nibs.append(d)
-        names.append(f)
-    if not nibs:
+    print("The image is identified by its own checksum, so it does not have to")
+    print("be said which device it came from.")
+    f = pick_file("*.bin", "Image to check")
+    nib = open(f, "rb").read()
+    if len(nib) != 256:
+        print("   %s is %d bytes, not 256" % (f, len(nib)))
         return
-    ok, _ = check(*nibs, names=names)
+    ok, _ = check(nib, names=[f])
     print()
-    print("   %s" % ("all images check out" if ok else "AT LEAST ONE IMAGE IS BAD"))
+    print("   %s" % ("the image checks out" if ok else "THIS IMAGE IS BAD"))
 
 
 def menu_restore(state):
@@ -730,7 +714,7 @@ def menu():
         print("Port: %s" % state["port"])
         c = ask_choice("Choose", [
             ("1", "Back up a device        (read a chip to a file)"),
-            ("2", "Check saved images      (decode and verify checksums)"),
+            ("2", "Check a saved image     (decode and verify checksums)"),
             ("3", "Restore a device        (write a file back to a chip)"),
             ("4", "Change serial port"),
             ("q", "Quit"),
