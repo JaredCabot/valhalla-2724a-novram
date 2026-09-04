@@ -17,8 +17,8 @@ disassembly of the 6809 firmware.
 across resets and array recalls. A restore has been carried out end to end — dry
 run, one store cycle, independent re-read matching byte for byte — and the
 instrument accepted the result, reporting `CAL DATA OK` after both devices were
-refitted. `test_protocol.py` covers the refusal paths, which cannot be exercised
-on hardware without risking the data.
+refitted. The refusal paths, which cannot be exercised on hardware without
+risking the data, were covered separately against a simulated device.
 
 The block layout, checksum arithmetic and acceptance tables are the same in the
 CPR and STD firmware variants. The tables sit at different ROM addresses —
@@ -476,13 +476,14 @@ dry run.
 | `rw_x2212_uno/rw_x2212_uno.ino` | The sketch. Reads, and once armed writes and stores. In its own folder as the Arduino IDE requires |
 | `flash.bat` | Compiles and uploads via the `arduino-cli` bundled in the Arduino IDE. `flash.bat` compiles and lists the ports it can see; `flash.bat COMn` uploads to one of them. Windows only |
 | `novram.py` | Host tool. No arguments for the menu; `read`, `check`, `write`, `pack` for scripting |
-| `test_protocol.py` | Tests the serial path and menu against a simulated X2212 |
 
-`test_protocol.py` models separate RAM and EEPROM arrays with recall and store
-moving data between them, so it can establish that a dry run leaves the array
-untouched, that a commit reaches it, and that a store the array does not accept
-is detected rather than reported as success. It also drives the menu with
-scripted input and confirms that each refusal leaves the array unchanged.
+The refusal paths were developed against a simulated X2212 modelling separate
+RAM and EEPROM arrays, with recall and store moving data between them. That
+harness established that a dry run leaves the array untouched, that a commit
+reaches it, and that a store the array does not accept is detected rather than
+reported as success; it also drove the menu with scripted input and confirmed
+that each refusal leaves the array unchanged. It is a development aid rather
+than something a user of the tool needs, and is not distributed here.
 
 ## Scope
 

@@ -20,3 +20,6 @@ __pycache__/
 *.pyc
 build/
 2724A_NOVRAM_Project.zip
+
+# Development test harness, kept locally but not distributed
+test_protocol.py
