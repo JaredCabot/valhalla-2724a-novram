@@ -96,7 +96,12 @@
  * Record format (both directions): AA + 16 hex nibbles + SS
  *   AA = start address, SS = 8-bit sum of the 16 nibble values
  */
-#define BANNER "X2212-NOVRAM-RW UNO 3.0"
+/* Host and sketch share a major version: the command set below is the contract
+   between them, so a change to it is a major bump.  novram.py parses this
+   banner and refuses anything it does not recognise or that is older than it
+   requires. */
+#define VERSION "1.0.0"
+#define BANNER  "X2212-NOVRAM v" VERSION
 #define ARMTOKEN "WRITE-ENABLE"
 
 /* ---- control, all four on PORTD ---------------------------------------- */

@@ -27,8 +27,8 @@ def pack(block, total=256, fill=0x0F):
     return bytes(nib)
 
 
-BANNER_RW = "X2212-NOVRAM-RW UNO 3.0"
-BANNER_OLD = "X2212-NOVRAM-READER UNO 1.3"   # the retired read-only sketch
+BANNER_RW = "X2212-NOVRAM v1.0.0"
+BANNER_OLD = "X2212-NOVRAM-RW UNO 3.0"          # a pre-1.0.0 sketch
 TOKEN = "WRITE-ENABLE"
 
 
@@ -322,16 +322,17 @@ def main():
     check("rejected", got is None and "checksum" in (err or ""), err or "")
 
     print("15. a sketch older than the safe minimum must be refused")
-    d = Fake(original, banner="X2212-NOVRAM-RW UNO 2.2")
+    d = Fake(original, banner="X2212-NOVRAM v0.9.0")
     res, err = run(d, lambda p: N.write_device(p, restore, commit=True))
     check("refused", res is None)
-    check("error says UNSAFE", err is not None and "UNSAFE" in err, err or "")
+    check("error says it is too old",
+          err is not None and "older than the required" in err, err or "")
     check("array untouched", bytes(d.eeprom) == original)
 
-    d = Fake(original, banner="X2212-NOVRAM-RW UNO 2.1")
+    d = Fake(original, banner="X2212-NOVRAM v0.9.0")
     got, err = run(d, lambda p: N.read_device(p, passes=3))
     check("old sketch refused for reads too",
-          got is None and "UNSAFE" in (err or ""), err or "")
+          got is None and "older than the required" in (err or ""), err or "")
 
     print("16. a spurious store during the dry run must be caught")
     d = Fake(original, glitch_store="write")

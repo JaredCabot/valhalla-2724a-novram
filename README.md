@@ -39,14 +39,20 @@ Licensed MIT — see `LICENSE`.
 ## The devices
 
 Drawing 2724-070 sheet 5 marks both devices **X2212-30**: a 256 x 4 nonvolatile
-static RAM in an 18-pin DIP on 300 mil centres. The parts fitted are marked
-**NCR 52212**, NCR's second source for the same device.
+static RAM in an 18-pin DIP on 300 mil centres. Some instruments are fitted with
+the **NCR 52212** instead, NCR's second source for the same device, so it is
+worth reading what is actually printed on the parts before assuming either.
+
+The two are pin-compatible and behave identically for these purposes, but their
+datasheets do not agree on timing, and the disagreement matters. Everything
+below is sized for whichever of the two is slower, so the tool is correct on
+both.
 
 The firmware confirms the size independently. The store routine at `$E0FA`
 addresses 180 consecutive locations from `$A000`, which requires a 256-word
 part rather than the 64-word X2210.
 
-The two datasheets differ, and the NCR figures govern:
+Where the two datasheets differ, the slower figure is the one to build to:
 
 | | Xicor X2212 | NCR 52212 |
 |---|---|---|
@@ -67,8 +73,8 @@ repeated passes agree with one another and yield a stable, correctly
 checksummed, incorrect image. The sketch allows 150 µs on each side of the
 recall pulse.
 
-The `-30` in "X2212-30" is a speed grade, not an endurance grade, and the
-fitted parts are not the `/10` variant. The applicable endurance figures are
+The `-30` in "X2212-30" is a speed grade, not an endurance grade. Unless the
+parts are marked as the `/10` variant, the applicable endurance figures are
 **10 000 store cycles and 1 000 data changes per bit**.
 
 ## Write protection
@@ -181,6 +187,30 @@ through I/O1. Bit order within a RAM is arbitrary provided it is consistent,
 and the sketch follows the same convention, so a nibble read here carries the
 value the instrument reads.
 
+### Serial protocol
+
+The sketch answers single-character commands at 115200 baud, 8N1. The command
+set is the contract between the two halves, which is why host and sketch share
+a major version.
+
+| | |
+|---|---|
+| `I` | Identify. Prints the banner, `X2212-NOVRAM v<major>.<minor>.<patch>`. The host reads it on connect and refuses a sketch it does not recognise or that is older than it requires |
+| `R` | **R**ead. Pulses `ARRAY RECALL` to copy the EEPROM array into the static RAM, then dumps all 256 locations. The only command a backup sends, and the command that proves a store landed, since it reads the array rather than the RAM |
+| `A` | **A**rm. Takes the token `WRITE-ENABLE` on the rest of the line. Nothing can be written or stored until this succeeds, and a wrong token disarms |
+| `W` | **W**rite. Receives 256 nibbles as 16 checksummed records, writes them to the static RAM, reads them back and compares, then dumps the RAM so the host can compare independently. **Does not touch the EEPROM array** |
+| `S` | **S**tore. Commits the static RAM to the EEPROM array — one store cycle. Refused unless armed *and* the immediately preceding `W` verified. Disarms itself afterwards, so one arming buys one store |
+| `D` | **D**isarm. Drops the arming and the verified-write flag |
+
+Records run in both directions as `AA` + 16 hex nibbles + `SS`, where `AA` is
+the start address and `SS` the 8-bit sum of the sixteen values. A transfer to
+the sketch must supply all sixteen records in address order; anything else is
+refused, so a short or repeated transfer cannot leave stale locations in the
+buffer to be written to the part.
+
+`R` is the whole of a backup. Everything destructive is behind `A`, and `S` is
+behind a verified `W` as well.
+
 ### Startup state
 
 `busIdle()` writes the PORT latch before the direction register. `PORTB`,
@@ -193,10 +223,18 @@ serial port, ahead of any host-side check. Writing the latch first makes each
 pin an input with its internal pull-up enabled during that interval, which
 reinforces the external resistor rather than opposing it.
 
-`novram.py` reads the sketch banner and requires **RW 3.0 or later**. Earlier
-sketches expect `/CS` on PB2, `ARRAY RECALL` on PB3, `/WE` on PB4 and the data
-nibble on PD4-PD7; on this wiring PD4 and PD5 are `ARRAY RECALL` and `/WE`, so
-such a sketch drives two control lines with data patterns.
+### Versions
+
+Host and sketch are released together and share a major version, because the
+command set is the contract between them. `novram.py --version` reports its own
+version and the minimum sketch it accepts.
+
+The host reads the banner on connect and refuses anything that does not match
+`X2212-NOVRAM v<major>.<minor>.<patch>`, or that is older than its minimum.
+That covers every sketch predating v1.0.0: those expect `/CS` on PB2,
+`ARRAY RECALL` on PB3, `/WE` on PB4 and the data nibble on PD4-PD7, and on this
+wiring PD4 and PD5 are `ARRAY RECALL` and `/WE`, so one would drive two control
+lines with data patterns.
 
 ## Write protection in the sketch
 

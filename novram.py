@@ -30,6 +30,7 @@ RAM to the EEPROM array and proves the result by recalling and re-reading.
 """
 import argparse
 import os
+import re
 import signal
 import sys
 import time
@@ -155,51 +156,43 @@ def _records(nib):
     return out
 
 
-# Minimum sketch version.  Anything older is not merely out of date, it is
-# wired for a different board, and the host refuses to talk to it.
-#
-#   3.0   THE PIN MAP CHANGED.  Everything before 3.0 expects /CS on PB2,
-#         RECALL on PB3, /WE on PB4 and the data nibble on PD4-PD7.  On the
-#         current wiring PD4 and PD5 are ARRAY RECALL and /WE, so a 2.x sketch
-#         would drive the two most dangerous control lines with data patterns.
-#         Nothing about that failure is quiet, but none of it is safe either.
-#   2.2   documented the rotated pin map (/CS on chip pin 11, /WE on 9,
-#         STORE on 7).  A rig built to that table has a data pin on STORE.
-#   2.1   fixed the busIdle() ordering.  2.0 and earlier set DDRD before PORTD,
-#         so STORE was driven LOW for a couple of instructions out of every
-#         reset -- including the DTR reset caused by opening this serial port.
-#         That is a valid store pulse, and it fired before any check here ran.
-#   1.x   the old read-only sketch, retired in favour of one wiring and one
-#         sketch.  If you have one flashed, reflash.
-MIN_RW = 3.0
+# Host and sketch are versioned together and share a major version: the wire
+# protocol is the contract between them, so a change to it is a major bump.
+__version__ = "1.0.0"
+MIN_SKETCH = (1, 0, 0)
+
+# Pre-1.0.0 sketches announced themselves as "X2212-NOVRAM-RW UNO 3.0" or
+# "X2212-NOVRAM-READER UNO 1.2".  Neither matches the banner below, so both are
+# refused, which is the intent: they expect /CS on PB2, ARRAY RECALL on PB3,
+# /WE on PB4 and the data nibble on PD4-PD7.  On the current wiring PD4 and PD5
+# are ARRAY RECALL and /WE, so such a sketch drives two control lines with data.
+BANNER_RE = re.compile(r"^X2212-NOVRAM v(\d+)\.(\d+)\.(\d+)$")
 
 
 def _banner_version(banner):
-    try:
-        return float(banner.rsplit(" ", 1)[1])
-    except (IndexError, ValueError):
-        return None
+    """The sketch version as a tuple, or None if this is not our sketch."""
+    m = BANNER_RE.match(banner)
+    return tuple(int(g) for g in m.groups()) if m else None
 
 
-def _connect(port, baud=115200, need_rw=True):
+def _connect(port, baud=115200):
     import serial                                     # pyserial
     s = serial.Serial(port, baud, timeout=5)
     time.sleep(2.0)                                   # board reset
     s.reset_input_buffer()
     s.write(b"I")
     banner = s.readline().decode("ascii", "replace").strip()
-    if "X2212" not in banner:
-        raise IOError("unexpected banner: %r" % banner)
-    if "RW" not in banner:
-        s.close()
-        raise IOError("this is not the current sketch (%s); flash "
-                      "rw_x2212_uno.ino from this folder" % banner)
     have = _banner_version(banner)
-    if have is None or have < MIN_RW:
+    if have is None:
         s.close()
-        raise IOError("sketch %r is older than %.1f and is UNSAFE - it expects "
-                      "a different pin map; reflash from this folder before "
-                      "going any further" % (banner, MIN_RW))
+        raise IOError("%r is not this tool's sketch, or predates v1.0.0. Older "
+                      "sketches expect a different pin map and would drive two "
+                      "control lines with data. Flash rw_x2212_uno.ino from "
+                      "this folder." % banner)
+    if have < MIN_SKETCH:
+        s.close()
+        raise IOError("sketch v%d.%d.%d is older than the required v%d.%d.%d; "
+                      "reflash from this folder" % (have + MIN_SKETCH))
     print("   %s" % banner)
     return s
 
@@ -722,6 +715,9 @@ def menu():
 def main():
     ap = argparse.ArgumentParser(description=__doc__,
                                  formatter_class=argparse.RawDescriptionHelpFormatter)
+    ap.add_argument("--version", action="version",
+                    version="novram.py %s (requires sketch v%d.%d.%d or later)"
+                            % ((__version__,) + MIN_SKETCH))
     sub = ap.add_subparsers(dest="cmd", required=True)
 
     r = sub.add_parser("read", help="read one device through the Arduino")
