@@ -3,7 +3,7 @@ REM Compile and upload the NOVRAM sketch using the arduino-cli bundled with the
 REM Arduino IDE.  No IDE window needed.
 REM
 REM   flash.bat              compile only, then list the ports it can see
-REM   flash.bat COM15        compile, then upload to that port
+REM   flash.bat COMn         compile, then upload to that port
 REM
 REM ALWAYS UPLOAD WITH THE SOCKET EMPTY.  The bootloader leaves every pin
 REM floating for a second or more during an upload; the pull-ups cover that,
@@ -24,9 +24,10 @@ echo Compiling...
 
 if "%~1"=="" (
   echo.
-  echo Compiled. Pass a port to upload, e.g.  flash.bat COM15
-  echo Ports:
+  echo Compiled. Ports detected:
   "%ACLI%" board list
+  echo.
+  echo To upload, pass the port name from the list above, e.g.  flash.bat COMn
   exit /b 0
 )
 

@@ -472,7 +472,11 @@ def pick_port(current=None):
         if v.isdigit() and 1 <= int(v) <= len(ports):
             return ports[int(v) - 1][0]
         return v
-    return ask("Serial port", current or "/dev/ttyACM0")
+    # Nothing enumerated. Offer a plausible default for the platform rather
+    # than a Linux device node on a Windows box.
+    if current is None:
+        current = "COM3" if sys.platform.startswith("win") else "/dev/ttyACM0"
+    return ask("Serial port", current)
 
 
 def pick_file(pattern, prompt, must_exist=True):

@@ -316,10 +316,20 @@ There is one file format: 256 bytes, one byte per nibble, one file per device.
 A backup is two such files. Nothing converts between formats because there is
 nothing to convert to.
 
+Every command that talks to the board takes the serial port as its first
+argument. The tool enumerates the ports it can see and offers them by number,
+so the port name rarely has to be typed. Where it does, the form depends on the
+platform: `COM3` and similar on Windows, `/dev/ttyACM0` or `/dev/ttyUSB0` on
+Linux, `/dev/cu.usbserial-*` on macOS. A board using a CH340 bridge rather than
+the ATmega16U2 appears under a different description but behaves identically.
+
 `flash.bat` compiles and uploads the sketch using the `arduino-cli` bundled
-inside the Arduino IDE, without opening the IDE. Uploads are performed with the
-socket empty, since the bootloader leaves every pin floating for a second or
-more.
+inside the Arduino IDE, without opening the IDE. Run with no argument it
+compiles and lists the ports it can see; run with a port it uploads to that
+port. It is a Windows convenience only — `arduino-cli` itself is
+cross-platform, and the same two commands work on any host. Uploads are
+performed with the socket empty, since the bootloader leaves every pin floating
+for a second or more.
 
 ### Backup
 
@@ -399,7 +409,7 @@ dry run.
 | | |
 |---|---|
 | `rw_x2212_uno/rw_x2212_uno.ino` | The sketch. Reads, and once armed writes and stores. In its own folder as the Arduino IDE requires |
-| `flash.bat` | Compiles and uploads via the `arduino-cli` bundled in the Arduino IDE. `flash.bat` compiles and lists ports; `flash.bat COM15` uploads |
+| `flash.bat` | Compiles and uploads via the `arduino-cli` bundled in the Arduino IDE. `flash.bat` compiles and lists the ports it can see; `flash.bat COMn` uploads to one of them. Windows only |
 | `novram.py` | Host tool. No arguments for the menu; `read`, `check`, `write`, `pack` for scripting |
 | `test_protocol.py` | Tests the serial path and menu against a simulated X2212 |
 
