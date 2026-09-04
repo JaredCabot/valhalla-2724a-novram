@@ -339,8 +339,10 @@ result checks out as that block type, so a chip in the wrong socket is
 identified immediately.
 
 Each read comprises three passes by default, settable with `--passes`, which
-must agree exactly; every 16-nibble record carries its own checksum. `check` recomputes both block checksums as the
-firmware does.
+must agree exactly; every 16-nibble record carries its own checksum. `check` recomputes block checksums as the firmware does. It accepts one or more
+images and identifies each by its own checksum rather than by the order given,
+so a calibration image is never decoded against the user block's layout or the
+reverse.
 
 An independent cross-check is available while the chips remain in the
 instrument: `RM0` through `RM9` recall the ten user memories to the display,
@@ -358,8 +360,9 @@ The restore path enforces the following sequence:
    tested against both block layouts. An image matching neither is refused, as
    is one matching both, since its type cannot then be established. The target
    device follows from the layout the image matches; it is not asked for.
-2. The device is read before anything is armed. If its current contents
-   identify as the other block type, the write is refused.
+2. The device is read before anything is armed, which establishes that the
+   read path works on the current wiring and gives the dry run a reference
+   image.
 3. A dry run is mandatory. The image is sent as 16 checksummed records, written
    to the device's static RAM, read back and compared on the Arduino and again
    independently on the host. The tool then disarms and issues an array recall,
@@ -383,13 +386,10 @@ path works on the current wiring before any write is attempted, and gives the
 dry run a reference image. The dry run ends by recalling and comparing against
 that pre-read image; a mismatch aborts.
 
-The wrong-chip check in step 2 tests the hardware rather than an operator's
-statement, but it has one blind spot. It works by identifying the block type of
-what the device currently holds, so it cannot run when those contents check out
-as neither type — which is precisely the case when a device is being restored
-because its data is bad. The tool says so when that happens and continues.
-Verifying by hand that the right device is fitted is the only guard in that
-situation.
+**Nothing establishes which device is physically in the socket.** The target
+follows from the image's layout, and the write proceeds against whatever is
+fitted. Verifying by hand that the right device is in the socket, and reading it
+and comparing against a known backup beforehand, is the guard.
 
 One failure mode is outside host-side detection. A store fired by the reset
 that opening the serial port causes occurs before the tool has read anything,

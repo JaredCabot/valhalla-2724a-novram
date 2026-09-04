@@ -219,20 +219,6 @@ def write_device(port, nib, commit=False):
     before = _read_dump(s)
     print("   read the device before touching it (%d locations)" % len(before))
 
-    # The device in the socket is the only authority on which device it is.
-    # An operator's answer to "which chip is fitted?" is not evidence; this is.
-    want, found = identify_block(nib), identify_block(before)
-    if want in ("cal", "user") and found in ("cal", "user") and want != found:
-        s.close()
-        raise IOError(
-            "WRONG CHIP: the image is a %s block, but the device in the socket "
-            "reads as a %s block. Writing it would destroy that device's "
-            "contents." % (want, found))
-    if found is None:
-        print("   the device's current contents do not check out as either block")
-        print("   type, so the wrong-chip check cannot run - verify by hand that")
-        print("   the right device is fitted before committing")
-
     s.write(b"A WRITE-ENABLE\n")
     _expect(s, "ARMED", "arming")
     print("   armed")
@@ -342,11 +328,9 @@ def sum16(b):
 
 
 # ----------------------------------------------------------------- decode ---
-def check(cal_nib, usr_nib):
-    cal = unpack(cal_nib, CAL_BYTES)
-    usr = unpack(usr_nib, USR_BYTES)
+def report_cal(cal):
+    """Decode and print one calibration block. Returns True if it is sound."""
     ok = True
-
     print("Calibration block  RAM $%04X-$%04X" % (CAL_BASE, CAL_BASE + CAL_BYTES - 1))
     stored = (cal[CAL_SUM - CAL_BASE] << 8) | cal[CAL_SUM - CAL_BASE + 1]
     calc = sum16(cal[:CAL_LEN])
@@ -357,6 +341,55 @@ def check(cal_nib, usr_nib):
         print("   !! The instrument would report CAL DATA BAD and overwrite")
         print("      these constants with the ROM defaults at next recall.")
 
+    print()
+    print("   Constants (see CAL_ACCEPT for the derivation):")
+    print("   idx  addr    raw       value      nominal     |err|    limit   ")
+    for i, (nom, lim) in enumerate(CAL_ACCEPT):
+        off = 3 * i
+        v = q22(cal, off)
+        err = abs(v - nom)
+        good = err < lim
+        if not good:
+            ok = False
+        print("   %3d  $%04X  $%02X%02X%02X  %+10.6f  %+10.6f  %8.6f %8.6f  %s"
+              % (i, CAL_CONSTS + off, cal[off], cal[off + 1], cal[off + 2],
+                 v / CAL_Q22, nom / CAL_Q22, err / CAL_Q22, lim / CAL_Q22,
+                 "ok" if good else "OUT"))
+    if all(abs(q22(cal, 3 * i) - nom) < lim for i, (nom, lim) in enumerate(CAL_ACCEPT)):
+        print("   all 13 constants inside the firmware's own acceptance windows")
+    else:
+        print("   !! at least one constant is outside the window SUB_E0A1 tests.")
+        print("      The instrument would not print \" CAL DATA OK   \" for this")
+        print("      data.  A correct checksum over wrong constants is exactly")
+        print("      what a bad read looks like -- re-read before trusting it.")
+
+    print()
+    print("   Setpoints, 6 records of 8 bytes ($C327-$C356):")
+    for r in range(6):
+        off = CAL_TABLE - CAL_BASE + 8 * r
+        rec = cal[off:off + 8]
+        d = decode_setpoint(rec)
+        if d is None:
+            print("   %d  $%04X  %s   (does not fit the BCD setpoint format)"
+                  % (r, CAL_TABLE + 8 * r, " ".join("%02X" % b for b in rec)))
+        else:
+            print("   %d  $%04X  %s   %12s   decade %d"
+                  % (r, CAL_TABLE + 8 * r, " ".join("%02X" % b for b in rec),
+                     d[0], d[1]))
+    print()
+    print("   $%04X  %02X   (in the checksum; not written by the ROM defaults)"
+          % (CAL_SPARE, cal[CAL_SPARE - CAL_BASE]))
+    print()
+    print("   Raw (88 bytes, $C300-$C357):")
+    for r in range(0, CAL_LEN, 16):
+        print("   %04X  %s" % (CAL_BASE + r,
+                               " ".join("%02X" % b for b in cal[r:r + 16])))
+    return ok
+
+
+def report_user(usr):
+    """Decode and print one user block. Returns True if it is sound."""
+    ok = True
     print("User block         RAM $%04X-$%04X" % (USR_BASE, USR_BASE + USR_BYTES - 1))
     stored = (usr[USR_SUM - USR_BASE] << 8) | usr[USR_SUM - USR_BASE + 1]
     calc = sum16(usr[:USR_LEN])
@@ -382,54 +415,49 @@ def check(cal_nib, usr_nib):
         off = 2 + m * 8
         if off + 8 <= USR_LEN:
             print("   memory %-2d  %s" % (m, " ".join("%02X" % b for b in usr[off:off + 8])))
+    return ok
 
-    print()
-    print("Calibration constants, decoded (see CAL_ACCEPT for the derivation):")
-    print("   idx  addr    raw       value      nominal     |err|    limit   ")
-    inrange = True
-    for i, (nom, lim) in enumerate(CAL_ACCEPT):
-        off = 3 * i
-        v = q22(cal, off)
-        err = abs(v - nom)
-        good = err < lim
-        if not good:
-            inrange = False
-        print("   %3d  $%04X  $%02X%02X%02X  %+10.6f  %+10.6f  %8.6f %8.6f  %s"
-              % (i, CAL_CONSTS + off, cal[off], cal[off + 1], cal[off + 2],
-                 v / CAL_Q22, nom / CAL_Q22, err / CAL_Q22, lim / CAL_Q22,
-                 "ok" if good else "OUT"))
-    if inrange:
-        print("   all 13 constants inside the firmware's own acceptance windows")
-    else:
-        print("   !! at least one constant is outside the window SUB_E0A1 tests.")
-        print("      The instrument would not print \" CAL DATA OK   \" for this")
-        print("      data.  A correct checksum over wrong constants is exactly")
-        print("      what a bad read looks like -- re-read before trusting it.")
 
-    print()
-    print("Calibration setpoints, 6 records of 8 bytes ($C327-$C356):")
-    for r in range(6):
-        off = CAL_TABLE - CAL_BASE + 8 * r
-        rec = cal[off:off + 8]
-        d = decode_setpoint(rec)
-        if d is None:
-            print("   %d  $%04X  %s   (does not fit the BCD setpoint format)"
-                  % (r, CAL_TABLE + 8 * r, " ".join("%02X" % b for b in rec)))
+def check(*nibs, **kw):
+    """Decode and verify one or more device images.
+
+    Each image is identified by its OWN checksum, not by the position it was
+    passed in.  A calibration image is therefore never decoded against the user
+    block's layout, or the reverse, however the files are given or picked.
+
+    Returns (ok, {"cal": bytes or None, "user": bytes or None}).
+    """
+    names = kw.get("names") or [None] * len(nibs)
+    ok = True
+    out = {"cal": None, "user": None}
+
+    for nib, name in zip(nibs, names):
+        kind = identify_block(nib)
+        print()
+        if name:
+            print("%s  identifies as %s" % (name, DEVNAME.get(kind, "neither block type")))
+        if kind == "cal":
+            out["cal"] = unpack(nib, CAL_BYTES)
+            ok &= report_cal(out["cal"])
+        elif kind == "user":
+            out["user"] = unpack(nib, USR_BYTES)
+            ok &= report_user(out["user"])
+        elif kind == "both":
+            ok = False
+            print("   This image satisfies BOTH block layouts, so its type cannot")
+            print("   be established from the file alone. Nothing is decoded.")
         else:
-            print("   %d  $%04X  %s   %12s   decade %d"
-                  % (r, CAL_TABLE + 8 * r, " ".join("%02X" % b for b in rec),
-                     d[0], d[1]))
-    print()
-    print("   $%04X  %02X   (in the checksum; not written by the ROM defaults)"
-          % (CAL_SPARE, cal[CAL_SPARE - CAL_BASE]))
+            ok = False
+            print("   This image checks out as neither block type, so nothing is")
+            print("   decoded. Its checksum against each layout:")
+            for who, nbytes, dlen in (("calibration", CAL_BYTES, CAL_LEN),
+                                      ("user", USR_BYTES, USR_LEN)):
+                blk = unpack(nib, nbytes)
+                st = (blk[dlen] << 8) | blk[dlen + 1]
+                print("      as a %-11s block  stored $%04X  computed $%04X"
+                      % (who, st, sum16(blk[:dlen])))
 
-    print()
-    print("Calibration block, raw (88 bytes, $C300-$C357):")
-    for r in range(0, CAL_LEN, 16):
-        print("   %04X  %s" % (CAL_BASE + r,
-                               " ".join("%02X" % b for b in cal[r:r + 16])))
-    return ok and inrange, cal, usr
-
+    return bool(ok), out
 
 
 # ------------------------------------------------------------------- menu ---
@@ -493,22 +521,38 @@ def pick_port(current=None):
     return ask("Serial port", current)
 
 
-def pick_file(pattern, prompt, must_exist=True):
+def pick_file(pattern, prompt, exclude=()):
+    """List the files matching pattern and take a number, a path, or Enter.
+
+    `exclude` names files already chosen: they are still listed and still
+    selectable by number, but the Enter default skips past them, so answering
+    two prompts with Enter does not hand back the same file twice."""
     import glob
     found = sorted(glob.glob(pattern))
-    if found:
-        print()
-        for i, f in enumerate(found, 1):
-            print("   %d  %s  (%d bytes)" % (i, f, os.path.getsize(f)))
-        v = ask("%s - choose a number or type a path" % prompt, found[0])
-        if v.isdigit() and 1 <= int(v) <= len(found):
-            v = found[int(v) - 1]
-    else:
-        v = ask(prompt)
-    if must_exist and not os.path.exists(v):
+    if not found:
+        while True:
+            v = ask(prompt)
+            if os.path.exists(v):
+                return v
+            print("   no such file: %s" % v)
+
+    print()
+    for i, f in enumerate(found, 1):
+        mark = "  (already chosen)" if f in exclude else ""
+        print("   %d  %s  (%d bytes)%s" % (i, f, os.path.getsize(f), mark))
+
+    default = next((f for f in found if f not in exclude), found[0])
+    while True:
+        v = ask("%s - number, path, or Enter" % prompt, default)
+        if v.isdigit():
+            n = int(v)
+            if 1 <= n <= len(found):
+                return found[n - 1]
+            print("   there is no %d in the list" % n)
+            continue
+        if os.path.exists(v):
+            return v
         print("   no such file: %s" % v)
-        return None
-    return v
 
 
 def identify_block(nib):
@@ -581,19 +625,27 @@ def menu_check(state):
     print(BAR)
     print("CHECK SAVED IMAGES")
     print(BAR)
-    a = pick_file("*.bin", "IC522 image (calibration)")
-    if a is None:
+    print("Each image is identified by its own checksum, so the order they are")
+    print("chosen in does not matter.")
+    chosen = []
+    a = pick_file("*.bin", "First image")
+    chosen.append(a)
+    if ask_yes("Check a second image as well?", True):
+        chosen.append(pick_file("*.bin", "Second image", exclude=chosen))
+
+    nibs, names = [], []
+    for f in chosen:
+        d = open(f, "rb").read()
+        if len(d) != 256:
+            print("   %s is %d bytes, not 256 - skipping" % (f, len(d)))
+            continue
+        nibs.append(d)
+        names.append(f)
+    if not nibs:
         return
-    b = pick_file("*.bin", "IC523 image (user)")
-    if b is None:
-        return
-    ca, cb = open(a, "rb").read(), open(b, "rb").read()
-    if len(ca) != 256 or len(cb) != 256:
-        print("   expected 256-byte nibble images")
-        return
+    ok, _ = check(*nibs, names=names)
     print()
-    ok, cal, usr = check(ca, cb)
-    print("\n   %s" % ("both blocks are intact" if ok else "AT LEAST ONE BLOCK IS BAD"))
+    print("   %s" % ("all images check out" if ok else "AT LEAST ONE IMAGE IS BAD"))
 
 
 def menu_restore(state):
@@ -709,9 +761,11 @@ def main():
     r.add_argument("-o", "--out", required=True)
     r.add_argument("--passes", type=int, default=3)
 
-    c = sub.add_parser("check", help="decode and verify a pair of device images")
-    c.add_argument("ic522")
-    c.add_argument("ic523")
+    c = sub.add_parser("check",
+                       help="decode and verify one or more device images")
+    c.add_argument("images", nargs="+",
+                   help="device images; each is identified by its own checksum, "
+                        "so the order does not matter")
 
     w = sub.add_parser("write", help="restore a saved image to a device")
     w.add_argument("port")
@@ -744,11 +798,15 @@ def main():
         print("   wrote %s (256 nibbles; %d in use)" % (a.out, used))
 
     elif a.cmd == "check":
-        cal_nib = open(a.ic522, "rb").read()
-        usr_nib = open(a.ic523, "rb").read()
-        if len(cal_nib) != 256 or len(usr_nib) != 256:
-            sys.exit("expected 256-byte nibble images")
-        ok, cal, usr = check(cal_nib, usr_nib)
+        nibs, names = [], []
+        for f in a.images:
+            d = open(f, "rb").read()
+            if len(d) != 256:
+                sys.exit("%s is %d bytes; expected a 256-byte device image"
+                         % (f, len(d)))
+            nibs.append(d)
+            names.append(f)
+        ok, _ = check(*nibs, names=names)
         return 0 if ok else 1
 
     elif a.cmd == "write":

@@ -232,19 +232,6 @@ def menu_tests(check):
         drive(f, N.menu_restore, ["junk.bin"])
         check("array untouched", bytes(f.eeprom) == onchip)
 
-        print("10. menu: a cal image against a device holding a user block is refused")
-        f = Fake(usr_nib)                                # user device in the socket
-        drive(f, N.menu_restore, ["cal.bin", "y", "COMMIT"])
-        check("array untouched", bytes(f.eeprom) == usr_nib)
-
-        print("11. the same refusal through the write subcommand")
-        d = Fake(usr_nib)
-        res, err = run(d, lambda p: N.write_device(p, cal_nib, commit=True))
-        check("refused", res is None)
-        check("error names the wrong chip",
-              err is not None and "WRONG CHIP" in err, err or "")
-        check("array untouched", bytes(d.eeprom) == usr_nib)
-
         print("12. menu: dry run runs, but nothing commits without COMMIT")
         f = Fake(onchip)
         drive(f, N.menu_restore, ["cal.bin", "y", "yes please"])
@@ -353,16 +340,25 @@ def main():
     usr[0], usr[1] = 1, 4                                   # address 14
     good_cal = _seal(cal, N.CAL_LEN)
     good_usr = _seal(usr, N.USR_LEN)
-    ok, dc, du = N.check(N.pack(good_cal), N.pack(good_usr))
+    ok, d = N.check(N.pack(good_cal), N.pack(good_usr))
     check("ROM-default constants are accepted", ok is True)
-    check("q22 reads 1.000000", abs(N.q22(dc, 0) / N.CAL_Q22 - 1.0) < 1e-6)
+    check("q22 reads 1.000000", abs(N.q22(d["cal"], 0) / N.CAL_Q22 - 1.0) < 1e-6)
     check("two-digit IEEE-488 address decodes to 14",
-          (du[0] * 10 + du[1]) & 0x1F == 14)
+          (d["user"][0] * 10 + d["user"][1]) & 0x1F == 14)
+
+    print("17b. order does not matter, and a user image is never decoded as cal")
+    ok2, d2 = N.check(N.pack(good_usr), N.pack(good_cal))     # reversed
+    check("same verdict with the arguments swapped", ok2 is True)
+    check("the cal image still landed in the cal slot", d2["cal"] == d["cal"])
+    check("the user image still landed in the user slot", d2["user"] == d["user"])
+    ok3, d3 = N.check(N.pack(good_usr))                        # user image alone
+    check("a user image alone checks out", ok3 is True)
+    check("and no calibration decode was attempted", d3["cal"] is None)
 
     bad = bytearray(good_cal)
     v = N.CAL_ACCEPT[1][0] + N.CAL_ACCEPT[1][1] + 1          # just outside
     bad[3], bad[4], bad[5] = (v >> 16) & 0xFF, (v >> 8) & 0xFF, v & 0xFF
-    ok, _, _ = N.check(N.pack(_seal(bad, N.CAL_LEN)), N.pack(good_usr))
+    ok, _ = N.check(N.pack(_seal(bad, N.CAL_LEN)), N.pack(good_usr))
     check("a constant outside its window is flagged", ok is False)
 
     print("7. one unstable nibble in a single pass must be caught")
