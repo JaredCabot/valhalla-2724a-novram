@@ -93,6 +93,22 @@ RAM only, and holds the I/O pins in high-Z; with the sketch running the pin is
 driven high against 0.5 mA. On `STORE` a pull-down would assert the condition
 being guarded against.
 
+## Supply decoupling
+
+A **0.1 µF ceramic capacitor between pins 18 and 8, mounted at the socket**, is
+required.
+
+The device sits on flying leads rather than the ground plane it was designed
+into, so its supply presents considerably more inductance than the instrument's
+board does. Supply current is not constant: both datasheets rate `Icc` at
+50-60 mA maximum, and the peak falls during the store cycle, when the EEPROM
+array is written. Both parts also inhibit all operations when `Vcc` falls to
+about 3 V, so a transient large enough to reach that threshold during a store
+interrupts it.
+
+Lead length is the whole point of the capacitor, so it belongs across the socket
+pins themselves rather than at the Arduino's supply header.
+
 ## Pin map
 
 Verified against drawing 2724-070 sheet 5, the Xicor X2212 datasheet and the
