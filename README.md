@@ -355,20 +355,19 @@ are at their default of zero.
 The restore path enforces the following sequence:
 
 1. Before the serial port is opened, the image is unpacked and its checksum
-   tested against both block layouts. An image matching neither is refused.
-2. The operator states which chip is in the socket. An image whose layout does
-   not match that statement is refused.
-3. Three hardware confirmations are required: sketch flashed, `/WE` pull-up
-   fitted, `STORE` pull-up fitted. A negative answer to any of them stops the
-   procedure.
-4. A dry run is mandatory. The image is sent as 16 checksummed records, written
+   tested against both block layouts. An image matching neither is refused, as
+   is one matching both, since its type cannot then be established. The target
+   device follows from the layout the image matches; it is not asked for.
+2. The device is read before anything is armed. If its current contents
+   identify as the other block type, the write is refused.
+3. A dry run is mandatory. The image is sent as 16 checksummed records, written
    to the device's static RAM, read back and compared on the Arduino and again
    independently on the host. The tool then disarms and issues an array recall,
-   reloading RAM from the untouched EEPROM. A failed dry run stops the
-   procedure.
-5. The commit prompt displays the source file and target device and requires
+   reloading RAM from the untouched EEPROM, and compares that against the
+   pre-read image. A failed dry run stops the procedure.
+4. The commit prompt displays the source file and target device and requires
    the string `COMMIT` in capitals.
-6. The commit issues one store cycle, the sketch disarms, and the host issues
+5. The commit issues one store cycle, the sketch disarms, and the host issues
    an array recall and re-reads. This confirms that the EEPROM array holds the
    data, not merely the RAM.
 
@@ -384,12 +383,13 @@ path works on the current wiring before any write is attempted, and gives the
 dry run a reference image. The dry run ends by recalling and comparing against
 that pre-read image; a mismatch aborts.
 
-**Neither the host nor the sketch can determine which device is physically in
-the socket.** The check in step 2 compares the image's layout against the
-operator's statement, not against the hardware. A calibration image written
-with the user device fitted passes every check the tool makes. The guard
-against that is external: read the device and compare the result against a
-known backup before starting a restore.
+The wrong-chip check in step 2 tests the hardware rather than an operator's
+statement, but it has one blind spot. It works by identifying the block type of
+what the device currently holds, so it cannot run when those contents check out
+as neither type — which is precisely the case when a device is being restored
+because its data is bad. The tool says so when that happens and continues.
+Verifying by hand that the right device is fitted is the only guard in that
+situation.
 
 One failure mode is outside host-side detection. A store fired by the reset
 that opening the serial port causes occurs before the tool has read anything,

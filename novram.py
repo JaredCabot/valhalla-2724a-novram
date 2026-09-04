@@ -219,6 +219,20 @@ def write_device(port, nib, commit=False):
     before = _read_dump(s)
     print("   read the device before touching it (%d locations)" % len(before))
 
+    # The device in the socket is the only authority on which device it is.
+    # An operator's answer to "which chip is fitted?" is not evidence; this is.
+    want, found = identify_block(nib), identify_block(before)
+    if want in ("cal", "user") and found in ("cal", "user") and want != found:
+        s.close()
+        raise IOError(
+            "WRONG CHIP: the image is a %s block, but the device in the socket "
+            "reads as a %s block. Writing it would destroy that device's "
+            "contents." % (want, found))
+    if found is None:
+        print("   the device's current contents do not check out as either block")
+        print("   type, so the wrong-chip check cannot run - verify by hand that")
+        print("   the right device is fitted before committing")
+
     s.write(b"A WRITE-ENABLE\n")
     _expect(s, "ARMED", "arming")
     print("   armed")
@@ -529,12 +543,6 @@ def menu_backup(state):
     print("EEPROM into RAM, and R never arms the sketch - the write and store")
     print("commands are refused until an explicit token is sent, which backing")
     print("up never does.")
-    print()
-    print("That is a software guarantee, though, not a physical one. There is")
-    print("no separate read-only sketch any more. For the first backup - the")
-    print("one that cannot be taken again - consider lifting the Uno D2 wire")
-    print("and strapping chip pin 9 (STORE) to +5V instead. One wire, and the")
-    print("part becomes physically incapable of committing anything.")
     dev = ask_choice("Which chip is in the socket?",
                      [("1", DEVNAME["cal"]), ("2", DEVNAME["user"])])
     dev = "cal" if dev == "1" else "user"
@@ -585,10 +593,6 @@ def menu_check(state):
         return
     print()
     ok, cal, usr = check(ca, cb)
-    if ask_yes("\nWrite the reassembled 174-byte block to a file?"):
-        out = ask("Save block to", "novram_block.bin")
-        open(out, "wb").write(cal + usr)
-        print("   wrote %s" % out)
     print("\n   %s" % ("both blocks are intact" if ok else "AT LEAST ONE BLOCK IS BAD"))
 
 
@@ -621,28 +625,8 @@ def menu_restore(state):
         return
     print()
     print("   %s checks out as: %s" % (src, DEVNAME[kind]))
-
-    dev = ask_choice("Which chip is in the socket?",
-                     [("1", DEVNAME["cal"]), ("2", DEVNAME["user"])])
-    dev = "cal" if dev == "1" else "user"
-    if dev != kind:
-        print()
-        print("   REFUSING: the image is a %s block but you have the %s chip" % (kind, dev))
-        print("   in the socket. Writing it would destroy that device's contents.")
-        return
-
-    print()
-    print("   Before going further, confirm the hardware:")
-    if not ask_yes("     rw_x2212_uno.ino flashed to the Uno?"):
-        print("   Stopping. Flash it, then come back.")
-        return
-    if not ask_yes("     10k pull-up fitted from /WE (chip pin 11, Uno D5) to +5V?"):
-        print("   Stopping. Fit it first - see the README.")
-        return
-    if not ask_yes("     10k pull-up fitted from STORE (chip pin 9, Uno D2) to +5V?"):
-        print("   Stopping. Without it a reset or sketch upload can fire a")
-        print("   store and destroy the array. Fit it first.")
-        return
+    print("   Target: %s. The device in the socket is read first and refused if" % DEVNAME[kind])
+    print("   it turns out to be the other one.")
 
     print()
     print("   Step 1 of 2: dry run. This loads the device RAM and verifies it,")
@@ -663,9 +647,9 @@ def menu_restore(state):
     print("   Dry run passed. The EEPROM array has not been touched.")
     print()
     print("   Step 2 of 2: commit. This issues one store cycle and permanently")
-    print("   replaces the contents of %s." % DEVNAME[dev])
+    print("   replaces the contents of %s." % DEVNAME[kind])
     print("   Source : %s" % src)
-    print("   Target : %s" % DEVNAME[dev])
+    print("   Target : %s" % DEVNAME[kind])
     print()
     if input("   Type COMMIT in capitals to proceed, anything else to stop: ").strip() != "COMMIT":
         print("   Stopped. Nothing was written to the array.")

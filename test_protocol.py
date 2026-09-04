@@ -207,8 +207,6 @@ def drive(fake, fn, answers):
 
 def menu_tests(check):
     import tempfile
-    HW = ["y", "y", "y"]                       # the three hardware questions
-
     cal = bytearray(range(N.CAL_LEN)) + bytearray(2)
     s = N.sum16(cal[:N.CAL_LEN])
     cal[N.CAL_LEN], cal[N.CAL_LEN + 1] = s >> 8, s & 0xFF
@@ -234,25 +232,28 @@ def menu_tests(check):
         drive(f, N.menu_restore, ["junk.bin"])
         check("array untouched", bytes(f.eeprom) == onchip)
 
-        print("10. menu: image type must match the chip in the socket")
-        f = Fake(onchip)
-        drive(f, N.menu_restore, ["user.bin", "1"])      # user image, cal socket
-        check("array untouched", bytes(f.eeprom) == onchip)
+        print("10. menu: a cal image against a device holding a user block is refused")
+        f = Fake(usr_nib)                                # user device in the socket
+        drive(f, N.menu_restore, ["cal.bin", "y", "COMMIT"])
+        check("array untouched", bytes(f.eeprom) == usr_nib)
 
-        print("11. menu: answering no to the STORE pull-up stops everything")
-        f = Fake(onchip)
-        drive(f, N.menu_restore, ["cal.bin", "1", "y", "y", "n"])
-        check("array untouched", bytes(f.eeprom) == onchip)
+        print("11. the same refusal through the write subcommand")
+        d = Fake(usr_nib)
+        res, err = run(d, lambda p: N.write_device(p, cal_nib, commit=True))
+        check("refused", res is None)
+        check("error names the wrong chip",
+              err is not None and "WRONG CHIP" in err, err or "")
+        check("array untouched", bytes(d.eeprom) == usr_nib)
 
         print("12. menu: dry run runs, but nothing commits without COMMIT")
         f = Fake(onchip)
-        drive(f, N.menu_restore, ["cal.bin", "1"] + HW + ["y", "yes please"])
+        drive(f, N.menu_restore, ["cal.bin", "y", "yes please"])
         check("array untouched", bytes(f.eeprom) == onchip)
         check("RAM left as the array had it", bytes(f.ram) == onchip)
 
         print("13. menu: the full path with COMMIT does write the array")
         f = Fake(onchip)
-        drive(f, N.menu_restore, ["cal.bin", "1"] + HW + ["y", "COMMIT"])
+        drive(f, N.menu_restore, ["cal.bin", "y", "COMMIT"])
         check("array holds the restored image", bytes(f.eeprom) == cal_nib)
         check("auto-disarmed", f.armed is False)
 
